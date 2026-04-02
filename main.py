@@ -7,6 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 
+# Thử import OpenSpace từ repo HKUDS (Sẽ bỏ qua nếu bác chưa cài)
+try:
+    from openspace import OpenSpaceAgent
+    HAS_OPENSPACE = True
+    print("[SILAS SYSTEM] Đã load thành công lõi não OpenSpace!")
+except ImportError:
+    HAS_OPENSPACE = False
+    print("[SILAS SYSTEM] Chưa cài OpenSpace, sẽ dùng 100% G4F.")
+
 app = FastAPI(title="Silas Pro API - Final Success", redirect_slashes=False)
 
 # Cấu hình CORS
@@ -31,7 +40,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def health_check():
-    return {"status": "alive", "msg": "API Silas - Sẵn sàng vượt rào!"}
+    return {"status": "alive", "msg": "API Silas - Đã trang bị lõi OpenSpace!"}
 
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(response: Response):
@@ -46,12 +55,41 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
         raise HTTPException(status_code=401, detail="Key lỏ!")
 
     current_timestamp = int(time.time())
+    prompt = req.messages[-1].content
     
-    # --- CHIẾN THUẬT VƯỢT RÀO ---
-    # Ép model về gpt-4o-mini vì đây là model có nhiều Provider hỗ trợ nhất
+    # ---------------------------------------------------------
+    # TẦNG 1: NÃO BỘ OPENSPACE (Tự tiến hóa & Phân tích logic)
+    # ---------------------------------------------------------
+    if HAS_OPENSPACE:
+        try:
+            # Khởi tạo Agent (truyền Auth Key vào nếu cần bảo mật nội bộ)
+            os_agent = OpenSpaceAgent(api_key=AUTH_KEY)
+            
+            # Để OpenSpace xử lý câu hỏi
+            os_response = os_agent.run(prompt)
+            
+            if os_response and len(str(os_response)) > 2:
+                print("[SILAS LOG] OpenSpace đã xử lý thành công!")
+                return {
+                    "id": f"chatcmpl-silas-os-{current_timestamp}",
+                    "object": "chat.completion",
+                    "created": current_timestamp,
+                    "model": "openspace-agent",
+                    "choices": [{
+                        "index": 0, 
+                        "message": {"role": "assistant", "content": str(os_response)}, 
+                        "finish_reason": "stop"
+                    }]
+                }
+        except Exception as e:
+            print(f"[SILAS LOG] OpenSpace bận hoặc lỗi: {e}. Đang chuyển qua G4F...")
+
+    # ---------------------------------------------------------
+    # TẦNG 2: CHIẾN THUẬT VƯỢT RÀO G4F (Dự phòng)
+    # ---------------------------------------------------------
     requested_model = "gpt-4o-mini"
 
-    # Danh sách Provider "Cảm tử quân" - Những ông này ít check IP Railway nhất
+    # Danh sách Provider "Cảm tử quân"
     providers = [
         getattr(g4f.Provider, "ChatGptEs", None),
         getattr(g4f.Provider, "Airforce", None),
@@ -63,20 +101,19 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
     providers = [p for p in providers if p is not None]
 
     try:
-        # Ép G4F phải thử đi thử lại nhiều lần với các Provider khác nhau
         response = g4f.ChatCompletion.create(
             model=requested_model,
             messages=[{"role": m.role, "content": m.content} for m in req.messages],
             provider=g4f.Provider.RetryProvider(providers),
             ignore_working=True,
-            timeout=30 # Đợi lâu một chút để Cloudflare thả cửa
+            timeout=30 
         )
 
         if not response or len(str(response)) < 2:
             raise Exception("Tất cả Provider đều im lặng")
 
         return {
-            "id": f"chatcmpl-silas-{current_timestamp}",
+            "id": f"chatcmpl-silas-g4f-{current_timestamp}",
             "object": "chat.completion",
             "created": current_timestamp,
             "model": req.model,
@@ -88,13 +125,12 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
         }
     except Exception as e:
         print(f"[SILAS ERROR] Vẫn sập: {str(e)}")
-        # CÚ CHỐT: Nếu tất cả AI đều sập, ta trả về một câu trả lời 'giả' nhưng chuyên nghiệp
-        # Để bác biết là đường truyền vẫn thông, chỉ là AI đang 'ngáo' IP
+        # CÚ CHỐT: Fallback cuối cùng
         return {
             "choices": [{
                 "message": {
                     "role": "assistant", 
-                    "content": "Bác Silas ơi, hiện tại toàn bộ Provider AI đang chặn IP từ Server Railway. Bác đợi vài phút để hệ thống tự đổi IP hoặc thử lại nhé!"
+                    "content": "Bác Silas ơi, hiện tại toàn bộ Provider AI và OpenSpace đang bận hoặc bị chặn IP. Bác đợi vài phút để hệ thống tự phục hồi nhé!"
                 }, 
                 "finish_reason": "stop"
             }]

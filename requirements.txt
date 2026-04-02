@@ -2,3 +2,4 @@ fastapi
 uvicorn
 g4f>=0.3.3.5
 pydantic
+git+https://github.com/HKUDS/OpenSpace.git

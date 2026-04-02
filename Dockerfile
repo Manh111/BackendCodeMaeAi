@@ -1,7 +1,9 @@
 FROM python:3.10-slim
 
-# 1. Gia cố HĐH: Cài đặt chứng chỉ SSL và curl để né lỗi mạng khi gọi API lậu
+# 1. Gia cố HĐH: Cài đặt git (BẮT BUỘC), chứng chỉ SSL và curl
+# Bác phải có git thì pip mới tải được repo OpenSpace từ GitHub về
 RUN apt-get update && apt-get install -y \
+    git \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
