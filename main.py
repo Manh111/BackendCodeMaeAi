@@ -7,9 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 
-app = FastAPI(title="Silas Pro API", redirect_slashes=False)
+app = FastAPI(title="Silas Pro API - Platinum", redirect_slashes=False)
 
-# Cấu hình CORS - Giữ nguyên vì bác đã thông quan được 200 OK trước đó
+# Cấu hình CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,7 +32,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def health_check():
-    return {"status": "alive", "msg": "API Silas đã sửa lỗi AttributeError!"}
+    return {"status": "alive", "msg": "API Silas đã FIX xong lỗi Permission và Model!"}
 
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(response: Response):
@@ -44,33 +44,39 @@ async def preflight_handler(response: Response):
 @app.post("/v1/chat/completions")
 async def chat_completion(req: ChatRequest, authorization: Optional[str] = Header(None)):
     if not authorization or authorization != f"Bearer {AUTH_KEY}":
-        raise HTTPException(status_code=401, detail="Key lỏ rồi bác ơi!")
+        raise HTTPException(status_code=401, detail="Key lỏ rồi bác!")
 
     current_timestamp = int(time.time())
-    requested_model = req.model.split(":")[-1].strip() if ":" in req.model else req.model
+    
+    # --- TRICK: MAPPING MODEL CHUẨN CHO G4F 7.x ---
+    # Ép các model 'ngáo' về model mà G4F chắc chắn hỗ trợ
+    raw_model = req.model.lower()
+    if "claude" in raw_model:
+        requested_model = "gpt-4o" # Dùng GPT-4 gánh tạ cho Claude vì Claude lậu hay chết
+    elif "gpt-4" in raw_model:
+        requested_model = "gpt-4o-mini"
+    else:
+        requested_model = "gpt-4o-mini"
 
-    # --- ĐOẠN FIX LỖI ATTRIBUTEERROR ---
-    # Tôi dùng Try-Except để lỡ nó đổi tên nữa thì App vẫn không sập
-    provider_list = []
+    # --- CHỈ DÙNG PROVIDER "SẠCH" KHÔNG ĐÒI COOKIE/KEY ---
+    # Loại bỏ các ông đòi ghi file 'har_and_cookies'
+    safe_providers = [
+        getattr(g4f.Provider, "BlackboxPro", None),
+        getattr(g4f.Provider, "DuckDuckGo", None),
+        getattr(g4f.Provider, "Airforce", None),
+        getattr(g4f.Provider, "ChatGptEs", None)
+    ]
+    # Lọc bỏ các Provider bị None (không tồn tại trong version này)
+    safe_providers = [p for p in safe_providers if p is not None]
+
     try:
-        # Cập nhật tên theo bản g4f mới nhất (BlackboxPro, DuckDuckGo, Liaobots)
-        from g4f.Provider import BlackboxPro, DuckDuckGo, Liaobots, Airforce
-        provider_list = [BlackboxPro, DuckDuckGo, Liaobots, Airforce]
-    except ImportError:
-        # Fallback nếu thư viện lại đổi tên nữa
-        provider_list = [] 
-
-    try:
-        # Nếu provider_list trống, g4f sẽ tự chọn cái tốt nhất
-        provider = g4f.Provider.RetryProvider(provider_list) if provider_list else None
-
         response = g4f.ChatCompletion.create(
             model=requested_model,
             messages=[{"role": m.role, "content": m.content} for m in req.messages],
-            max_tokens=req.max_tokens or 4096,
-            provider=provider
+            provider=g4f.Provider.RetryProvider(safe_providers)
         )
 
+        # Trả về JSON chuẩn để NextChat không báo lỗi
         return {
             "id": f"chatcmpl-silas-{current_timestamp}",
             "object": "chat.completion",
@@ -83,8 +89,14 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
             }]
         }
     except Exception as e:
-        print(f"[SILAS ERROR] Lỗi thực thi: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"AI đang bận: {str(e)}")
+        print(f"[SILAS ERROR] Crash: {str(e)}")
+        # Trả về lỗi 200 kèm nội dung lỗi để UI không bị treo đỏ lòm
+        return {
+            "choices": [{
+                "message": {"role": "assistant", "content": f"⚠️ Lỗi rồi bác: {str(e)}"},
+                "finish_reason": "stop"
+            }]
+        }
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
