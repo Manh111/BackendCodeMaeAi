@@ -30,6 +30,7 @@ app.add_middleware(
 )
 
 AUTH_KEY = os.getenv("API_KEY", "silas123")
+LEGACY_AUTH_KEYS = {k.strip() for k in [AUTH_KEY, os.getenv("LEGACY_API_KEY", ""), "silas123"] if k and k.strip()}
 OPENSPACE_ENABLED = os.getenv("OPENSPACE_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
 OPENSPACE_AS_PRIMARY = os.getenv("OPENSPACE_AS_PRIMARY", "0").strip().lower() in {"1", "true", "yes"}
 OPENSPACE_TIMEOUT_SECONDS = int(os.getenv("OPENSPACE_TIMEOUT_SECONDS", "60"))
@@ -243,7 +244,8 @@ async def preflight_handler(response: Response):
 
 @app.post("/v1/chat/completions")
 async def chat_completion(req: ChatRequest, authorization: Optional[str] = Header(None)):
-    if not authorization or authorization != f"Bearer {AUTH_KEY}":
+    auth_value = authorization.removeprefix("Bearer ").strip() if authorization else ""
+    if not auth_value or auth_value not in LEGACY_AUTH_KEYS:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
     if not req.messages:
