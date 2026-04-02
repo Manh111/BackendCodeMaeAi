@@ -1,6 +1,9 @@
 # Nâng cấp lên bản 3.12 để chiều lòng OpenSpace
 FROM python:3.12-slim
 
+ENV PYTHONUNBUFFERED=1 \
+    OPENSPACE_ENABLED=1
+
 # 1. Gia cố HĐH: Cài đặt git, chứng chỉ SSL và curl
 RUN apt-get update && apt-get install -y \
     git \
