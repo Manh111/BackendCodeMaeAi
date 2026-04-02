@@ -3,11 +3,21 @@ import time
 import uvicorn
 import g4f
 from fastapi import FastAPI, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 from duckduckgo_search import DDGS
 
 app = FastAPI(title="Silas Pro API")
+
+# Cấu hình CORS - Cho phép request từ trình duyệt
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Lấy Key từ biến môi trường Railway (Mặc định là silas123 nếu bác quên set)
 AUTH_KEY = os.getenv("API_KEY", "silas123")
