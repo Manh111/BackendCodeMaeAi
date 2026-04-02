@@ -1,5 +1,4 @@
 fastapi
 uvicorn
-duckduckgo-search
-g4f
+g4f>=0.3.3.5
 pydantic

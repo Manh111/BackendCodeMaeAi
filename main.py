@@ -6,7 +6,6 @@ from fastapi import FastAPI, HTTPException, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-from duckduckgo_search import DDGS
 
 # Thêm redirect_slashes=False để diệt tận gốc lỗi CORS do dư dấu /
 app = FastAPI(title="Silas Pro API", redirect_slashes=False)
@@ -37,6 +36,7 @@ class ChatRequest(BaseModel):
     model: str = "gpt-4o-mini"
     messages: List[Message]
     stream: bool = False
+    max_tokens: Optional[int] = None
 
 @app.get("/")
 def health_check():
@@ -55,11 +55,12 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
     if not authorization or authorization != f"Bearer {AUTH_KEY}":
         raise HTTPException(status_code=401, detail="Key lỏ hoặc chưa nhập Key vào NextChat!")
 
-    prompt = req.messages[-1].content
     current_timestamp = int(time.time())
     
+    # Xử lý prefix và model
     requested_model = (req.model or "gpt-4o-mini").strip().lower()
     route = "auto"
+    
     if requested_model.startswith("duck:"):
         route = "duck"
         requested_model = requested_model.split(":", 1)[1].strip() or "gpt-4o-mini"
@@ -67,58 +68,35 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
         route = "g4f"
         requested_model = requested_model.split(":", 1)[1].strip() or "gpt-4o-mini"
 
-    duck_models = {
-        "gpt-4": "gpt-4o-mini",
-        "gpt-3.5": "gpt-4o-mini",
-        "claude-3": "claude-3-haiku",
-        "llama-3": "llama-3.1-70b"
-    }
-    
-    selected_model = "gpt-4o-mini" 
-    for key, val in duck_models.items():
-        if key in requested_model:
-            selected_model = val
-            break
-
-    def duck_response(model_name: str):
-        with DDGS() as ddgs:
-            return ddgs.chat(prompt, model=model_name)
-
-    if route in {"duck", "auto"}:
-        try:
-            response = duck_response(selected_model)
-            if response:
-                return {
-                    "id": f"chatcmpl-silas-duck-{current_timestamp}",
-                    "object": "chat.completion",
-                    "created": current_timestamp,
-                    "model": req.model,
-                    "choices": [{"index": 0, "message": {"role": "assistant", "content": response}, "finish_reason": "stop"}]
-                }
-        except Exception as e:
-            print(f"[SILAS LOG] Duck dở chứng: {e}")
-
+    # Gộp toàn bộ luồng gọi vào G4F để tận dụng RetryProvider, tránh lỗi 500 do thư viện ngoài
+    providers = []
     if route == "duck":
-        raise HTTPException(status_code=500, detail="Duck route failed")
+        providers = [g4f.Provider.DuckDuckGo]
+    elif route == "g4f":
+        providers = [g4f.Provider.Blackbox, g4f.Provider.Liaobots]
+    else:
+        providers = [g4f.Provider.Blackbox, g4f.Provider.Liaobots, g4f.Provider.DuckDuckGo]
 
     try:
         response = g4f.ChatCompletion.create(
             model=requested_model,
             messages=[{"role": m.role, "content": m.content} for m in req.messages],
-            provider=g4f.Provider.RetryProvider([
-                g4f.Provider.Blackbox,
-                g4f.Provider.Liaobots,
-                g4f.Provider.DuckDuckGo
-            ])
+            max_tokens=req.max_tokens or 4096,
+            provider=g4f.Provider.RetryProvider(providers)
         )
+        
+        # Đảm bảo response luôn là string an toàn
+        final_content = str(response) if response else "AI đang bận, bác thử lại sau nhé."
+
         return {
             "id": f"chatcmpl-silas-g4f-{current_timestamp}",
             "object": "chat.completion",
             "created": current_timestamp,
             "model": req.model,
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": response}, "finish_reason": "stop"}]
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": final_content}, "finish_reason": "stop"}]
         }
     except Exception as e:
+        print(f"[SILAS LOG] Sập toàn tập: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Sập toàn tập: {str(e)}")
 
 if __name__ == "__main__":
