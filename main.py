@@ -33,6 +33,16 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
 
     prompt = req.messages[-1].content
     current_timestamp = int(time.time())
+    requested_model = (req.model or "gpt-4o-mini").strip()
+    normalized_model = requested_model.lower()
+
+    route = "auto"
+    if normalized_model.startswith("duck:"):
+        route = "duck"
+        requested_model = requested_model.split(":", 1)[1].strip() or "gpt-4o-mini"
+    elif normalized_model.startswith("g4f:"):
+        route = "g4f"
+        requested_model = requested_model.split(":", 1)[1].strip() or "gpt-4o-mini"
 
     # 2. Ưu tiên DuckDuckGo (Trâu, mượt, ít chết)
     # Tự động map tên model từ NextChat sang chuẩn của DuckDuckGo
@@ -49,10 +59,13 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
             selected_model = val
             break
 
-    try:
+    def duck_response(model_name: str):
         with DDGS() as ddgs:
-            # Gọi DuckDuckGo AI
-            response = ddgs.chat(prompt, model=selected_model)
+            return ddgs.chat(prompt, model=model_name)
+
+    if route in {"duck", "auto"}:
+        try:
+            response = duck_response(selected_model)
             if response:
                 return {
                     "id": f"chatcmpl-silas-duck-{current_timestamp}",
@@ -60,19 +73,22 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
                     "created": current_timestamp,
                     "model": req.model,
                     "choices": [{
-                        "index": 0, 
-                        "message": {"role": "assistant", "content": response}, 
+                        "index": 0,
+                        "message": {"role": "assistant", "content": response},
                         "finish_reason": "stop"
                     }]
                 }
-    except Exception as e:
-        print(f"[SILAS LOG] DuckDuckGo dở chứng: {e}. Đang chuyển qua G4F...")
+        except Exception as e:
+            print(f"[SILAS LOG] DuckDuckGo dở chứng: {e}." + (" Đang chuyển qua G4F..." if route == "auto" else ""))
+
+    if route == "duck":
+        raise HTTPException(status_code=500, detail="Duck route failed")
 
     # 3. Fallback sang G4F nếu DuckDuckGo bị lỗi (Rate limit hoặc quá tải)
     try:
         # Dùng RetryProvider để G4F tự động thử nhiều nhà cung cấp
         response = g4f.ChatCompletion.create(
-            model=req.model,
+            model=requested_model,
             messages=[{"role": m.role, "content": m.content} for m in req.messages],
             provider=g4f.Provider.RetryProvider([
                 g4f.Provider.Blackbox,
