@@ -2,7 +2,7 @@ import os
 import time
 import uvicorn
 import g4f
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -36,13 +36,13 @@ class ChatRequest(BaseModel):
 def health_check():
     return {"status": "alive", "msg": "API Silas đang chạy ngầm nhé bác!"}
 
-@app.get("/v1/chat/completions")
-def test_endpoint():
-    return {
-        "msg": "Bác Silas ơi, chỗ này phải dùng POST mới chat được nhé!", 
-        "method": "GET", 
-        "hint": "Hãy gửi POST request với Authorization header để chat"
-    }
+# --- BÙA CHÚ CHỐNG LỖI 405 PREFLIGHT ---
+@app.options("/v1/chat/completions")
+async def preflight_handler(response: Response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept"
+    return {"status": "ok"}
 
 @app.post("/v1/chat/completions")
 async def chat_completion(req: ChatRequest, authorization: Optional[str] = Header(None)):
