@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 
-app = FastAPI(title="Silas Pro API - Platinum", redirect_slashes=False)
+app = FastAPI(title="Silas Pro API - Final Shield", redirect_slashes=False)
 
 # Cấu hình CORS
 app.add_middleware(
@@ -28,11 +28,10 @@ class ChatRequest(BaseModel):
     model: str = "gpt-4o-mini"
     messages: List[Message]
     stream: bool = False
-    max_tokens: Optional[int] = None
 
 @app.get("/")
 def health_check():
-    return {"status": "alive", "msg": "API Silas đã FIX xong lỗi Permission và Model!"}
+    return {"status": "alive", "msg": "API Silas đã loại bỏ Blackbox lỗi!"}
 
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(response: Response):
@@ -48,35 +47,31 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
 
     current_timestamp = int(time.time())
     
-    # --- TRICK: MAPPING MODEL CHUẨN CHO G4F 7.x ---
-    # Ép các model 'ngáo' về model mà G4F chắc chắn hỗ trợ
-    raw_model = req.model.lower()
-    if "claude" in raw_model:
-        requested_model = "gpt-4o" # Dùng GPT-4 gánh tạ cho Claude vì Claude lậu hay chết
-    elif "gpt-4" in raw_model:
-        requested_model = "gpt-4o-mini"
-    else:
-        requested_model = "gpt-4o-mini"
+    # Ép model về bản ổn định nhất
+    requested_model = "gpt-4o-mini" if "gpt" in req.model.lower() else "gpt-4o"
 
-    # --- CHỈ DÙNG PROVIDER "SẠCH" KHÔNG ĐÒI COOKIE/KEY ---
-    # Loại bỏ các ông đòi ghi file 'har_and_cookies'
+    # DANH SÁCH PROVIDER "LỲ" NHẤT HIỆN TẠI (Bỏ Blackbox)
     safe_providers = [
-        getattr(g4f.Provider, "BlackboxPro", None),
-        getattr(g4f.Provider, "DuckDuckGo", None),
         getattr(g4f.Provider, "Airforce", None),
-        getattr(g4f.Provider, "ChatGptEs", None)
+        getattr(g4f.Provider, "ChatGptEs", None),
+        getattr(g4f.Provider, "FreeGpt", None),
+        getattr(g4f.Provider, "DuckDuckGo", None),
+        getattr(g4f.Provider, "Pizzagpt", None),
     ]
-    # Lọc bỏ các Provider bị None (không tồn tại trong version này)
     safe_providers = [p for p in safe_providers if p is not None]
 
     try:
+        # RetryProvider sẽ tự động nhảy qua thằng tiếp theo nếu thằng trước báo 404
         response = g4f.ChatCompletion.create(
             model=requested_model,
             messages=[{"role": m.role, "content": m.content} for m in req.messages],
-            provider=g4f.Provider.RetryProvider(safe_providers)
+            provider=g4f.Provider.RetryProvider(safe_providers),
+            ignore_working=True # Bỏ qua kiểm tra trạng thái để ép nó chạy
         )
 
-        # Trả về JSON chuẩn để NextChat không báo lỗi
+        if not response:
+            raise Exception("Tất cả Provider đều từ chối trả lời")
+
         return {
             "id": f"chatcmpl-silas-{current_timestamp}",
             "object": "chat.completion",
@@ -89,11 +84,11 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
             }]
         }
     except Exception as e:
-        print(f"[SILAS ERROR] Crash: {str(e)}")
-        # Trả về lỗi 200 kèm nội dung lỗi để UI không bị treo đỏ lòm
+        print(f"[SILAS ERROR] Sập nguồn: {str(e)}")
+        # Trả về text lỗi trực tiếp vào ô chat thay vì văng lỗi 500 sập web
         return {
             "choices": [{
-                "message": {"role": "assistant", "content": f"⚠️ Lỗi rồi bác: {str(e)}"},
+                "message": {"role": "assistant", "content": f"⚠️ AI đang bảo trì (Lỗi: {str(e)}). Bác thử lại sau vài giây nhé!"},
                 "finish_reason": "stop"
             }]
         }
