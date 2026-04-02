@@ -1,7 +1,7 @@
-FROM python:3.10-slim
+# Nâng cấp lên bản 3.12 để chiều lòng OpenSpace
+FROM python:3.12-slim
 
-# 1. Gia cố HĐH: Cài đặt git (BẮT BUỘC), chứng chỉ SSL và curl
-# Bác phải có git thì pip mới tải được repo OpenSpace từ GitHub về
+# 1. Gia cố HĐH: Cài đặt git, chứng chỉ SSL và curl
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -11,8 +11,10 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 COPY . .
 
-# 2. Update pip lên bản mới nhất trước khi cài thư viện để tránh lỗi build g4f
+# 2. Update pip lên bản mới nhất
 RUN pip install --upgrade pip
+
+# 3. Cài đặt thư viện (Bây giờ Python 3.12 sẽ khớp với OpenSpace)
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Railway sẽ tự động cấp cổng qua biến môi trường PORT
