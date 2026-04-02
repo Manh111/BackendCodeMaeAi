@@ -35,6 +35,10 @@ class ChatRequest(BaseModel):
 def health_check():
     return {"status": "alive", "msg": "API Silas đang chạy ngầm nhé bác!"}
 
+@app.get("/v1/chat/completions")
+def test_endpoint():
+    return {"msg": "Bác Silas ơi, chỗ này phải dùng POST mới chat được, nhưng link thì thông rồi nhé!", "method": "GET", "hint": "Hãy gửi POST request với Authorization header để chat"}
+
 @app.post("/v1/chat/completions")
 async def chat_completion(req: ChatRequest, authorization: Optional[str] = Header(None)):
     # 1. Kiểm tra Auth (NextChat gửi token theo format 'Bearer <key>')
