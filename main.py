@@ -8,7 +8,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 from duckduckgo_search import DDGS
 
-app = FastAPI(title="Silas Pro API")
+# Thêm redirect_slashes=False để diệt tận gốc lỗi CORS do dư dấu /
+app = FastAPI(title="Silas Pro API", redirect_slashes=False)
 
 # Cấu hình CORS - Cho phép request từ trình duyệt
 app.add_middleware(
@@ -37,7 +38,11 @@ def health_check():
 
 @app.get("/v1/chat/completions")
 def test_endpoint():
-    return {"msg": "Bác Silas ơi, chỗ này phải dùng POST mới chat được, nhưng link thì thông rồi nhé!", "method": "GET", "hint": "Hãy gửi POST request với Authorization header để chat"}
+    return {
+        "msg": "Bác Silas ơi, chỗ này phải dùng POST mới chat được nhé!", 
+        "method": "GET", 
+        "hint": "Hãy gửi POST request với Authorization header để chat"
+    }
 
 @app.post("/v1/chat/completions")
 async def chat_completion(req: ChatRequest, authorization: Optional[str] = Header(None)):
@@ -47,6 +52,8 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
 
     prompt = req.messages[-1].content
     current_timestamp = int(time.time())
+    
+    # Xử lý prefix ép luồng (duck: hoặc g4f:)
     requested_model = (req.model or "gpt-4o-mini").strip()
     normalized_model = requested_model.lower()
 
@@ -58,8 +65,7 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
         route = "g4f"
         requested_model = requested_model.split(":", 1)[1].strip() or "gpt-4o-mini"
 
-    # 2. Ưu tiên DuckDuckGo (Trâu, mượt, ít chết)
-    # Tự động map tên model từ NextChat sang chuẩn của DuckDuckGo
+    # 2. Map model cho DuckDuckGo
     duck_models = {
         "gpt-4": "gpt-4o-mini",
         "gpt-3.5": "gpt-4o-mini",
@@ -69,14 +75,16 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
     
     selected_model = "gpt-4o-mini" # Mặc định
     for key, val in duck_models.items():
-        if key in req.model.lower():
+        if key in requested_model.lower():
             selected_model = val
             break
 
+    # Hàm gọi DuckDuckGo
     def duck_response(model_name: str):
         with DDGS() as ddgs:
             return ddgs.chat(prompt, model=model_name)
 
+    # Nếu luồng là duck hoặc auto -> Chạy DuckDuckGo
     if route in {"duck", "auto"}:
         try:
             response = duck_response(selected_model)
@@ -95,6 +103,7 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
         except Exception as e:
             print(f"[SILAS LOG] DuckDuckGo dở chứng: {e}." + (" Đang chuyển qua G4F..." if route == "auto" else ""))
 
+    # Nếu người dùng ép luồng duck mà duck chết -> Báo lỗi luôn
     if route == "duck":
         raise HTTPException(status_code=500, detail="Duck route failed")
 
