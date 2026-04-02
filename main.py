@@ -37,7 +37,7 @@ OPENSPACE_TIMEOUT_SECONDS = int(os.getenv("OPENSPACE_TIMEOUT_SECONDS", "60"))
 G4F_TIMEOUT_SECONDS = int(os.getenv("G4F_TIMEOUT_SECONDS", "30"))
 DEFAULT_G4F_MODEL = os.getenv("G4F_DEFAULT_MODEL", "gpt-4o-mini")
 AI_SCRAPER_BASE_URL = os.getenv("AI_SCRAPER_BASE_URL", "").strip().rstrip("/")
-AI_SCRAPER_SECRET = os.getenv("AI_SCRAPER_SECRET", "")
+AI_SCRAPER_SECRET = os.getenv("AI_SCRAPER_SECRET", "").strip() or AUTH_KEY
 AI_SCRAPER_TIMEOUT_SECONDS = int(os.getenv("AI_SCRAPER_TIMEOUT_SECONDS", "180"))
 
 
@@ -188,6 +188,7 @@ async def _run_ai_scraper(ai_name: str, prompt: str) -> str:
     headers = {"Content-Type": "application/json"}
     if AI_SCRAPER_SECRET:
         headers["X-API-Secret"] = AI_SCRAPER_SECRET
+        headers["Authorization"] = f"Bearer {AI_SCRAPER_SECRET}"
 
     url = f"{AI_SCRAPER_BASE_URL}/ask"
     payload = {"ai": ai_name, "prompt": prompt}
