@@ -62,5 +62,13 @@
         "server_name": null
       }
     ]
-  }
+  },
+  "execution_outcome": {
+    "status": "unknown",
+    "iterations": 0,
+    "execution_time": 60.01
+  },
+  "end_time": "2026-04-04T05:48:47",
+  "total_steps": 0,
+  "backend_counts": {}
 }

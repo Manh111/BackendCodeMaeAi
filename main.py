@@ -5,7 +5,6 @@ import time
 import uuid
 from typing import List, Optional, Sequence, Tuple
 
-import g4f
 import httpx
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Response
@@ -35,11 +34,8 @@ app.add_middleware(
 AUTH_KEY = os.getenv("API_KEY", "maeai-tuxue-v1-key-2026")
 LEGACY_AUTH_KEYS = {k.strip() for k in [AUTH_KEY, os.getenv("LEGACY_API_KEY", ""), "silas123"] if k and k.strip()}
 OPENSPACE_ENABLED = os.getenv("OPENSPACE_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
-OPENSPACE_AS_PRIMARY = os.getenv("OPENSPACE_AS_PRIMARY", "1").strip().lower() in {"1", "true", "yes"}
 OPENSPACE_TIMEOUT_SECONDS = int(os.getenv("OPENSPACE_TIMEOUT_SECONDS", "60"))
-G4F_TIMEOUT_SECONDS = int(os.getenv("G4F_TIMEOUT_SECONDS", "30"))
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "90"))
-DEFAULT_G4F_MODEL = os.getenv("G4F_DEFAULT_MODEL", "MaeAI Tuxue V1")
 DEFAULT_OPENSPACE_MODEL = os.getenv("OPENSPACE_DEFAULT_MODEL", "default")
 OPENSPACE_LOCAL_MODEL = os.getenv("OPENSPACE_LOCAL_MODEL", "ollama/qwen2.5-coder:3b")
 UPSTREAM_ENABLED = os.getenv("UPSTREAM_ENABLED", "0").strip().lower() not in {"0", "false", "no"}
@@ -67,19 +63,11 @@ def _parse_model(model: str) -> Tuple[str, str]:
         return "openspace", raw.split(":", 1)[1].strip() or "default"
     if lower in {"openspace", "os"}:
         return "openspace", DEFAULT_OPENSPACE_MODEL or "default"
-    if lower.startswith("duck:"):
-        return "duck", raw.split(":", 1)[1].strip() or DEFAULT_G4F_MODEL
-    if lower.startswith("g4f:"):
-        return "g4f", raw.split(":", 1)[1].strip() or DEFAULT_G4F_MODEL
-    if lower.startswith("supermax:"):
-        return "supermax", raw.split(":", 1)[1].strip() or DEFAULT_G4F_MODEL
-    if lower in {"supermax", "super-max", "super_max", "super max"}:
-        return "supermax", DEFAULT_G4F_MODEL
     if lower.startswith("backend:"):
         inner = raw.split(":", 1)[1].strip()
-        return _parse_model(inner or DEFAULT_G4F_MODEL)
+        return _parse_model(inner or f"openspace:{OPENSPACE_LOCAL_MODEL}")
 
-    return "g4f", raw or DEFAULT_G4F_MODEL
+    return "openspace", raw or OPENSPACE_LOCAL_MODEL
 
 
 def _normalize_messages(messages: Sequence[Message]) -> List[dict]:
@@ -107,7 +95,7 @@ async def _run_upstream_chat(req: ChatRequest, auth_value: str) -> Optional[dict
         return None
 
     request_payload = {
-        "model": req.model or DEFAULT_G4F_MODEL,
+        "model": req.model or f"openspace:{DEFAULT_OPENSPACE_MODEL}",
         "messages": _normalize_messages(req.messages),
         "stream": False,
     }
@@ -153,7 +141,7 @@ async def _run_upstream_chat(req: ChatRequest, auth_value: str) -> Optional[dict
         if isinstance(legacy_data, dict):
             text = str(legacy_data.get("response", "")).strip()
             if text:
-                return _openai_response(req.model or DEFAULT_G4F_MODEL, text, "upstream")
+                return _openai_response(req.model or f"openspace:{DEFAULT_OPENSPACE_MODEL}", text, "upstream")
 
     raise RuntimeError("Upstream response is not in supported format")
 
@@ -196,61 +184,6 @@ async def _run_openspace(prompt: str, model_name: str) -> str:
         raise RuntimeError("OpenSpace returned an empty response. Please verify OpenSpace LLM credentials/model configuration.")
 
     return text
-
-
-def _provider_retry_chain(provider_hint: str):
-    duck_first = [
-        getattr(g4f.Provider, "DuckDuckGo", None),
-        getattr(g4f.Provider, "ChatGptEs", None),
-        getattr(g4f.Provider, "Airforce", None),
-        getattr(g4f.Provider, "FreeGpt", None),
-        getattr(g4f.Provider, "Pizzagpt", None),
-        getattr(g4f.Provider, "Liaobots", None),
-    ]
-    g4f_first = [
-        getattr(g4f.Provider, "ChatGptEs", None),
-        getattr(g4f.Provider, "Airforce", None),
-        getattr(g4f.Provider, "FreeGpt", None),
-        getattr(g4f.Provider, "Pizzagpt", None),
-        getattr(g4f.Provider, "Liaobots", None),
-        getattr(g4f.Provider, "DuckDuckGo", None),
-    ]
-
-    supermax_chain = [
-        getattr(g4f.Provider, "DuckDuckGo", None),
-        getattr(g4f.Provider, "ChatGptEs", None),
-        getattr(g4f.Provider, "Airforce", None),
-        getattr(g4f.Provider, "FreeGpt", None),
-        getattr(g4f.Provider, "Pizzagpt", None),
-        getattr(g4f.Provider, "Liaobots", None),
-    ]
-
-    if provider_hint == "duck":
-        chain = duck_first
-    elif provider_hint == "supermax":
-        chain = supermax_chain
-    else:
-        chain = g4f_first
-    chain = [provider for provider in chain if provider is not None]
-    return g4f.Provider.RetryProvider(chain)
-
-
-async def _run_g4f(messages: Sequence[Message], model_name: str, provider_hint: str) -> str:
-    def _call() -> str:
-        return str(
-            g4f.ChatCompletion.create(
-                model=model_name,
-                messages=_normalize_messages(messages),
-                provider=_provider_retry_chain(provider_hint),
-                ignore_working=True,
-                timeout=G4F_TIMEOUT_SECONDS,
-            )
-        )
-
-    result = (await asyncio.to_thread(_call)).strip()
-    if not result:
-        raise RuntimeError("G4F returned an empty response")
-    return result
 
 
 async def _run_ollama_direct(messages: Sequence[Message], model_name: str) -> str:
@@ -325,7 +258,7 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
     except Exception as exc:
         print(f"[maeai:{request_id}] provider=upstream status=fallback reason={exc}")
 
-    if provider == "openspace" or (provider == "g4f" and OPENSPACE_AS_PRIMARY):
+    if provider == "openspace":
         try:
             prompt = req.messages[-1].content
             openspace_model = resolved_model or DEFAULT_OPENSPACE_MODEL
@@ -359,26 +292,13 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
 
                 return _openai_response("openspace:error", err_text, "openspace")
 
-    try:
-        if provider == "duck":
-            fallback_hint = "duck"
-        elif provider == "supermax":
-            fallback_hint = "supermax"
-        else:
-            fallback_hint = "g4f"
-        fallback_model = resolved_model or DEFAULT_G4F_MODEL
-        g4f_text = await _run_g4f(req.messages, fallback_model, fallback_hint)
-        print(f"[maeai:{request_id}] provider=g4f status=ok route={fallback_hint} model={fallback_model}")
-        return _openai_response(f"{fallback_hint}:{fallback_model}", g4f_text, "g4f")
-    except Exception as exc:
-        print(f"[maeai:{request_id}] provider=g4f status=error reason={exc}")
-        if openspace_error is not None:
-            print(f"[maeai:{request_id}] openspace_root_cause={openspace_error}")
-        return _openai_response(
-            "fallback:busy",
-            "OpenSpace và các provider G4F hiện chưa phản hồi. Vui lòng thử lại sau ít phút.",
-            "fallback",
-        )
+    if openspace_error is not None:
+        print(f"[maeai:{request_id}] openspace_root_cause={openspace_error}")
+    return _openai_response(
+        "fallback:busy",
+        "OpenSpace hiện chưa phản hồi. Vui lòng thử lại sau ít phút.",
+        "fallback",
+    )
 
 
 if __name__ == "__main__":
