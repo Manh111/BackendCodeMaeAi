@@ -1,0 +1,17 @@
+{
+  "task_id": "task_788fa705c1a2",
+  "start_time": "2026-04-04T05:34:43",
+  "end_time": "2026-04-04T05:34:43.260252",
+  "trajectory": {
+    "total_steps": 0,
+    "success_count": 0,
+    "success_rate": 0.0,
+    "by_backend": {},
+    "by_tool": {}
+  },
+  "agent_actions": {
+    "total_actions": 0,
+    "by_agent": {},
+    "by_type": {}
+  }
+}
