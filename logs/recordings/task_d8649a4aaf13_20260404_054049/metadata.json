@@ -1,0 +1,74 @@
+{
+  "task_name": "task_d8649a4aaf13",
+  "start_time": "2026-04-04T05:40:49",
+  "enable_screenshot": false,
+  "enable_video": false,
+  "task_id": "task_d8649a4aaf13",
+  "backends": [
+    "shell",
+    "mcp",
+    "system",
+    "gui",
+    "web"
+  ],
+  "instruction": "hello",
+  "retrieved_tools": {
+    "instruction": "hello",
+    "count": 9,
+    "tools": [
+      {
+        "name": "shell_agent",
+        "backend": "shell",
+        "server_name": null
+      },
+      {
+        "name": "read_file",
+        "backend": "shell",
+        "server_name": null
+      },
+      {
+        "name": "write_file",
+        "backend": "shell",
+        "server_name": null
+      },
+      {
+        "name": "list_dir",
+        "backend": "shell",
+        "server_name": null
+      },
+      {
+        "name": "run_shell",
+        "backend": "shell",
+        "server_name": null
+      },
+      {
+        "name": "list_providers",
+        "backend": "system",
+        "server_name": null
+      },
+      {
+        "name": "list_backend_tools",
+        "backend": "system",
+        "server_name": null
+      },
+      {
+        "name": "list_session_tools",
+        "backend": "system",
+        "server_name": null
+      },
+      {
+        "name": "list_all_backend_tools",
+        "backend": "system",
+        "server_name": null
+      }
+    ]
+  },
+  "execution_outcome": {
+    "status": "error",
+    "iterations": 0,
+    "execution_time": 0.55
+  },
+  "end_time": "2026-04-04T05:40:49",
+  "total_steps": 0,
+  "backend_counts": {}
+}

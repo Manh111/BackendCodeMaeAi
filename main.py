@@ -14,11 +14,13 @@ from pydantic import BaseModel
 
 try:
     from openspace import OpenSpace
+    from openspace.tool_layer import OpenSpaceConfig
 
     HAS_OPENSPACE = True
 except Exception:
     HAS_OPENSPACE = False
     OpenSpace = None
+    OpenSpaceConfig = None
 
 app = FastAPI(title="MaeAI Backend API", redirect_slashes=False)
 
@@ -38,6 +40,7 @@ OPENSPACE_TIMEOUT_SECONDS = int(os.getenv("OPENSPACE_TIMEOUT_SECONDS", "60"))
 G4F_TIMEOUT_SECONDS = int(os.getenv("G4F_TIMEOUT_SECONDS", "30"))
 DEFAULT_G4F_MODEL = os.getenv("G4F_DEFAULT_MODEL", "MaeAI Tuxue V1")
 DEFAULT_OPENSPACE_MODEL = os.getenv("OPENSPACE_DEFAULT_MODEL", "default")
+OPENSPACE_LOCAL_MODEL = os.getenv("OPENSPACE_LOCAL_MODEL", "ollama/qwen3.5:latest")
 UPSTREAM_ENABLED = os.getenv("UPSTREAM_ENABLED", "0").strip().lower() not in {"0", "false", "no"}
 UPSTREAM_BASE_URL = os.getenv("UPSTREAM_BASE_URL", "https://contorted-valrie-noneffusively.ngrok-free.dev").strip().rstrip("/")
 UPSTREAM_CHAT_PATH = "/" + os.getenv("UPSTREAM_CHAT_PATH", "v1/chat/completions").strip().lstrip("/")
@@ -158,14 +161,23 @@ async def _run_openspace(prompt: str, model_name: str) -> str:
     if not (OPENSPACE_ENABLED and HAS_OPENSPACE):
         raise RuntimeError("OpenSpace is disabled or unavailable")
 
-    async with OpenSpace() as agent:
+    resolved_model = (model_name or "").strip()
+    if not resolved_model or resolved_model.lower() == "default":
+        resolved_model = os.getenv("OPENSPACE_MODEL", "").strip() or OPENSPACE_LOCAL_MODEL
+
+    # Ensure OpenSpace/LiteLLM reads the intended model instead of its internal OpenRouter default.
+    os.environ["OPENSPACE_MODEL"] = resolved_model
+
+    agent_config = OpenSpaceConfig(llm_model=resolved_model) if OpenSpaceConfig is not None else None
+
+    async with OpenSpace(config=agent_config) if agent_config is not None else OpenSpace() as agent:
         execute_fn = agent.execute
         signature = inspect.signature(execute_fn)
 
-        if "model" in signature.parameters and model_name and model_name != "default":
-            result = await asyncio.wait_for(execute_fn(prompt, model=model_name), timeout=OPENSPACE_TIMEOUT_SECONDS)
-        elif "llm_model" in signature.parameters and model_name and model_name != "default":
-            result = await asyncio.wait_for(execute_fn(prompt, llm_model=model_name), timeout=OPENSPACE_TIMEOUT_SECONDS)
+        if "model" in signature.parameters and resolved_model and resolved_model != "default":
+            result = await asyncio.wait_for(execute_fn(prompt, model=resolved_model), timeout=OPENSPACE_TIMEOUT_SECONDS)
+        elif "llm_model" in signature.parameters and resolved_model and resolved_model != "default":
+            result = await asyncio.wait_for(execute_fn(prompt, llm_model=resolved_model), timeout=OPENSPACE_TIMEOUT_SECONDS)
         else:
             result = await asyncio.wait_for(execute_fn(prompt), timeout=OPENSPACE_TIMEOUT_SECONDS)
 
