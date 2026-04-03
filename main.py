@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import json
 import os
 import time
 import uuid
@@ -8,6 +9,7 @@ from typing import List, Optional, Sequence, Tuple
 import httpx
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -214,6 +216,40 @@ async def _run_openspace(prompt: str, model_name: str) -> str:
     return text
 
 
+async def _run_ollama_stream(messages: Sequence[Message], model_name: str):
+    """Stream responses from Ollama line by line."""
+    model = (model_name or "").strip()
+    if model.startswith("ollama/"):
+        model = model.split("/", 1)[1].strip()
+    if not model:
+        model = "qwen2.5-coder:3b"
+
+    # Prepend Claude-style system prompt for training
+    enriched_messages = [
+        {"role": "system", "content": CLAUDE_STYLE_PROMPT}
+    ]
+    enriched_messages.extend(_normalize_messages(messages))
+
+    payload = {
+        "model": model,
+        "messages": enriched_messages,
+        "stream": True,
+    }
+
+    async with httpx.AsyncClient(timeout=None) as client:
+        async with client.stream("POST", "http://127.0.0.1:11434/api/chat", json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if line.strip():
+                    try:
+                        data = json.loads(line)
+                        chunk = str((data.get("message") or {}).get("content", "")).strip()
+                        if chunk:
+                            yield chunk
+                    except:
+                        pass
+
+
 async def _run_ollama_direct(messages: Sequence[Message], model_name: str) -> str:
     model = (model_name or "").strip()
     if model.startswith("ollama/"):
@@ -242,6 +278,15 @@ async def _run_ollama_direct(messages: Sequence[Message], model_name: str) -> st
     if not text:
         raise RuntimeError("Ollama returned empty content")
     return text
+
+
+async def _streaming_generator(messages, resolved_model):
+    """Generate SSE-formatted streaming response."""
+    try:
+        async for chunk in _run_ollama_stream(messages, resolved_model):
+            yield f"data: {json.dumps({'choices': [{'delta': {'content': chunk}, 'index': 0}]})}\n\n"
+    except Exception as e:
+        yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
 
 @app.get("/")
@@ -283,6 +328,20 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
     provider, resolved_model = _parse_model(requested_model)
     request_id = uuid.uuid4().hex[:8]
     openspace_error: Optional[Exception] = None
+
+    # Check if streaming is requested
+    if req.stream:
+        # For streaming requests, use the streaming generator
+        if provider == "openspace" and (resolved_model or "").startswith("ollama/"):
+            return StreamingResponse(
+                _streaming_generator(req.messages, resolved_model),
+                media_type="text/event-stream"
+            )
+        elif provider == "openspace":
+            return StreamingResponse(
+                _streaming_generator(req.messages, resolved_model),
+                media_type="text/event-stream"
+            )
 
     # For local ollama models, use direct chat API to avoid tool-agent artifacts in normal conversation.
     if provider == "openspace" and (resolved_model or "").startswith("ollama/"):
