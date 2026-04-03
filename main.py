@@ -38,7 +38,7 @@ OPENSPACE_TIMEOUT_SECONDS = int(os.getenv("OPENSPACE_TIMEOUT_SECONDS", "60"))
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "90"))
 DEFAULT_OPENSPACE_MODEL = os.getenv("OPENSPACE_DEFAULT_MODEL", "default")
 OPENSPACE_LOCAL_MODEL = os.getenv("OPENSPACE_LOCAL_MODEL", "ollama/qwen2.5-coder:3b")
-UPSTREAM_ENABLED = os.getenv("UPSTREAM_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
+UPSTREAM_ENABLED = os.getenv("UPSTREAM_ENABLED", "0").strip().lower() not in {"0", "false", "no"}
 UPSTREAM_BASE_URL = os.getenv("UPSTREAM_BASE_URL", "https://contorted-valrie-noneffusively.ngrok-free.dev").strip().rstrip("/")
 UPSTREAM_CHAT_PATH = "/" + os.getenv("UPSTREAM_CHAT_PATH", "v1/chat/completions").strip().lstrip("/")
 UPSTREAM_LEGACY_CHAT_PATH = "/" + os.getenv("UPSTREAM_LEGACY_CHAT_PATH", "chat").strip().lstrip("/")
@@ -58,6 +58,11 @@ class ChatRequest(BaseModel):
 def _parse_model(model: str) -> Tuple[str, str]:
     raw = (model or "").strip()
     lower = raw.lower()
+
+    if lower.startswith("upstream:"):
+        return "upstream", raw.split(":", 1)[1].strip() or "default"
+    if lower == "upstream":
+        return "upstream", "default"
 
     if lower.startswith("openspace:"):
         return "openspace", raw.split(":", 1)[1].strip() or "default"
@@ -250,13 +255,14 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
     request_id = uuid.uuid4().hex[:8]
     openspace_error: Optional[Exception] = None
 
-    try:
-        upstream_result = await _run_upstream_chat(req, auth_value)
-        if upstream_result is not None:
-            print(f"[maeai:{request_id}] provider=upstream status=ok model={requested_model}")
-            return upstream_result
-    except Exception as exc:
-        print(f"[maeai:{request_id}] provider=upstream status=fallback reason={exc}")
+    if provider == "upstream":
+        try:
+            upstream_result = await _run_upstream_chat(req, auth_value)
+            if upstream_result is not None:
+                print(f"[maeai:{request_id}] provider=upstream status=ok model={requested_model}")
+                return upstream_result
+        except Exception as exc:
+            print(f"[maeai:{request_id}] provider=upstream status=fallback reason={exc}")
 
     if provider == "openspace":
         try:
