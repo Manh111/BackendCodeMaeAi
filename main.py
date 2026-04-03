@@ -43,6 +43,26 @@ UPSTREAM_BASE_URL = os.getenv("UPSTREAM_BASE_URL", "https://contorted-valrie-non
 UPSTREAM_CHAT_PATH = "/" + os.getenv("UPSTREAM_CHAT_PATH", "v1/chat/completions").strip().lstrip("/")
 UPSTREAM_LEGACY_CHAT_PATH = "/" + os.getenv("UPSTREAM_LEGACY_CHAT_PATH", "chat").strip().lstrip("/")
 UPSTREAM_TIMEOUT_SECONDS = int(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "90"))
+OPENSPACE_AGENT_TRAIN_MODE = os.getenv("OPENSPACE_AGENT_TRAIN_MODE", "1").strip().lower() in {"1", "true", "yes"}
+
+# Claude-style system prompt for training
+CLAUDE_STYLE_PROMPT = """You are a helpful, harmless, and honest AI assistant inspired by Claude. Your responses should be:
+
+1. **Clear and concise**: Use plain language and avoid unnecessary jargon when possible
+2. **Thoughtful**: Take time to understand the question and provide nuanced, well-reasoned answers
+3. **Humble**: Acknowledge uncertainty and limitations in your knowledge
+4. **Balanced**: Present multiple perspectives when relevant
+5. **Practical**: Provide actionable advice and examples when helpful
+6. **Conversational**: Engage naturally with the user while maintaining professionalism
+
+When answering:
+- Start by clarifying any ambiguous parts of the question if needed
+- Structure complex answers with clear sections or bullet points
+- Explain your reasoning rather than just giving answers
+- Offer to clarify or expand on anything you said
+- If you don't know something, say so directly rather than guessing
+
+Remember: You're having a conversation with a real person. Be helpful, engaged, and authentic."""
 class Message(BaseModel):
     role: str
     content: str
@@ -162,6 +182,9 @@ async def _run_openspace(prompt: str, model_name: str) -> str:
     # Ensure OpenSpace/LiteLLM reads the intended model instead of its internal OpenRouter default.
     os.environ["OPENSPACE_MODEL"] = resolved_model
 
+    # Prepend Claude-style system prompt to help train the model's behavior
+    enriched_prompt = f"{CLAUDE_STYLE_PROMPT}\n\n---\n\n{prompt}"
+
     agent_config = OpenSpaceConfig(llm_model=resolved_model) if OpenSpaceConfig is not None else None
 
     async with OpenSpace(config=agent_config) if agent_config is not None else OpenSpace() as agent:
@@ -169,11 +192,11 @@ async def _run_openspace(prompt: str, model_name: str) -> str:
         signature = inspect.signature(execute_fn)
 
         if "model" in signature.parameters and resolved_model and resolved_model != "default":
-            result = await asyncio.wait_for(execute_fn(prompt, model=resolved_model), timeout=OPENSPACE_TIMEOUT_SECONDS)
+            result = await asyncio.wait_for(execute_fn(enriched_prompt, model=resolved_model), timeout=OPENSPACE_TIMEOUT_SECONDS)
         elif "llm_model" in signature.parameters and resolved_model and resolved_model != "default":
-            result = await asyncio.wait_for(execute_fn(prompt, llm_model=resolved_model), timeout=OPENSPACE_TIMEOUT_SECONDS)
+            result = await asyncio.wait_for(execute_fn(enriched_prompt, llm_model=resolved_model), timeout=OPENSPACE_TIMEOUT_SECONDS)
         else:
-            result = await asyncio.wait_for(execute_fn(prompt), timeout=OPENSPACE_TIMEOUT_SECONDS)
+            result = await asyncio.wait_for(execute_fn(enriched_prompt), timeout=OPENSPACE_TIMEOUT_SECONDS)
 
     if isinstance(result, dict):
         text = str(result.get("response", "")).strip()
@@ -198,9 +221,15 @@ async def _run_ollama_direct(messages: Sequence[Message], model_name: str) -> st
     if not model:
         model = "qwen2.5-coder:3b"
 
+    # Prepend Claude-style system prompt for training
+    enriched_messages = [
+        {"role": "system", "content": CLAUDE_STYLE_PROMPT}
+    ]
+    enriched_messages.extend(_normalize_messages(messages))
+
     payload = {
         "model": model,
-        "messages": _normalize_messages(messages),
+        "messages": enriched_messages,
         "stream": False,
     }
 
