@@ -1,0 +1,66 @@
+{
+  "task_name": "task_36f9a21a3f2e",
+  "start_time": "2026-04-04T05:44:32",
+  "enable_screenshot": false,
+  "enable_video": false,
+  "task_id": "task_36f9a21a3f2e",
+  "backends": [
+    "system",
+    "web",
+    "gui",
+    "shell",
+    "mcp"
+  ],
+  "instruction": "hello",
+  "retrieved_tools": {
+    "instruction": "hello",
+    "count": 9,
+    "tools": [
+      {
+        "name": "shell_agent",
+        "backend": "shell",
+        "server_name": null
+      },
+      {
+        "name": "read_file",
+        "backend": "shell",
+        "server_name": null
+      },
+      {
+        "name": "write_file",
+        "backend": "shell",
+        "server_name": null
+      },
+      {
+        "name": "list_dir",
+        "backend": "shell",
+        "server_name": null
+      },
+      {
+        "name": "run_shell",
+        "backend": "shell",
+        "server_name": null
+      },
+      {
+        "name": "list_providers",
+        "backend": "system",
+        "server_name": null
+      },
+      {
+        "name": "list_backend_tools",
+        "backend": "system",
+        "server_name": null
+      },
+      {
+        "name": "list_session_tools",
+        "backend": "system",
+        "server_name": null
+      },
+      {
+        "name": "list_all_backend_tools",
+        "backend": "system",
+        "server_name": null
+      }
+    ]
+  }
+}
