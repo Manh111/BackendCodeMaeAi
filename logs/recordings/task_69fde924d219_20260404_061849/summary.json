@@ -1,0 +1,27 @@
+{
+  "task_id": "task_69fde924d219",
+  "start_time": "2026-04-04T06:18:49",
+  "end_time": "2026-04-04T06:19:11.236360",
+  "trajectory": {
+    "total_steps": 4,
+    "success_count": 3,
+    "success_rate": 0.75,
+    "by_backend": {
+      "shell": 2,
+      "system": 2
+    },
+    "by_tool": {
+      "shell_agent": 2,
+      "list_providers": 2
+    }
+  },
+  "agent_actions": {
+    "total_actions": 1,
+    "by_agent": {
+      "OpenSpace-GroundingAgent": 1
+    },
+    "by_type": {
+      "execute": 1
+    }
+  }
+}

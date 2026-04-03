@@ -255,6 +255,15 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
     request_id = uuid.uuid4().hex[:8]
     openspace_error: Optional[Exception] = None
 
+    # For local ollama models, use direct chat API to avoid tool-agent artifacts in normal conversation.
+    if provider == "openspace" and (resolved_model or "").startswith("ollama/"):
+        try:
+            ollama_text = await _run_ollama_direct(req.messages, resolved_model)
+            print(f"[maeai:{request_id}] provider=ollama-direct status=ok model={resolved_model}")
+            return _openai_response(f"ollama:{resolved_model.replace('ollama/', '')}", ollama_text, "ollama")
+        except Exception as exc:
+            print(f"[maeai:{request_id}] provider=ollama-direct status=fallback reason={exc}")
+
     if provider == "upstream":
         try:
             upstream_result = await _run_upstream_chat(req, auth_value)
