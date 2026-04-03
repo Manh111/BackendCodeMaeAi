@@ -1,15 +1,15 @@
 {
-  "task_name": "task_36f9a21a3f2e",
-  "start_time": "2026-04-04T05:44:32",
+  "task_name": "task_070bae76eba5",
+  "start_time": "2026-04-04T05:47:47",
   "enable_screenshot": false,
   "enable_video": false,
-  "task_id": "task_36f9a21a3f2e",
+  "task_id": "task_070bae76eba5",
   "backends": [
-    "system",
     "web",
     "gui",
-    "shell",
-    "mcp"
+    "mcp",
+    "system",
+    "shell"
   ],
   "instruction": "hello",
   "retrieved_tools": {
@@ -62,13 +62,5 @@
         "server_name": null
       }
     ]
-  },
-  "execution_outcome": {
-    "status": "unknown",
-    "iterations": 0,
-    "execution_time": 60.0
-  },
-  "end_time": "2026-04-04T05:45:32",
-  "total_steps": 0,
-  "backend_counts": {}
+  }
 }

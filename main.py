@@ -38,9 +38,10 @@ OPENSPACE_ENABLED = os.getenv("OPENSPACE_ENABLED", "1").strip().lower() not in {
 OPENSPACE_AS_PRIMARY = os.getenv("OPENSPACE_AS_PRIMARY", "1").strip().lower() in {"1", "true", "yes"}
 OPENSPACE_TIMEOUT_SECONDS = int(os.getenv("OPENSPACE_TIMEOUT_SECONDS", "60"))
 G4F_TIMEOUT_SECONDS = int(os.getenv("G4F_TIMEOUT_SECONDS", "30"))
+OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "90"))
 DEFAULT_G4F_MODEL = os.getenv("G4F_DEFAULT_MODEL", "MaeAI Tuxue V1")
 DEFAULT_OPENSPACE_MODEL = os.getenv("OPENSPACE_DEFAULT_MODEL", "default")
-OPENSPACE_LOCAL_MODEL = os.getenv("OPENSPACE_LOCAL_MODEL", "ollama/qwen3.5:latest")
+OPENSPACE_LOCAL_MODEL = os.getenv("OPENSPACE_LOCAL_MODEL", "ollama/qwen2.5-coder:3b")
 UPSTREAM_ENABLED = os.getenv("UPSTREAM_ENABLED", "0").strip().lower() not in {"0", "false", "no"}
 UPSTREAM_BASE_URL = os.getenv("UPSTREAM_BASE_URL", "https://contorted-valrie-noneffusively.ngrok-free.dev").strip().rstrip("/")
 UPSTREAM_CHAT_PATH = "/" + os.getenv("UPSTREAM_CHAT_PATH", "v1/chat/completions").strip().lstrip("/")
@@ -252,6 +253,30 @@ async def _run_g4f(messages: Sequence[Message], model_name: str, provider_hint: 
     return result
 
 
+async def _run_ollama_direct(messages: Sequence[Message], model_name: str) -> str:
+    model = (model_name or "").strip()
+    if model.startswith("ollama/"):
+        model = model.split("/", 1)[1].strip()
+    if not model:
+        model = "qwen2.5-coder:3b"
+
+    payload = {
+        "model": model,
+        "messages": _normalize_messages(messages),
+        "stream": False,
+    }
+
+    async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT_SECONDS) as client:
+        response = await client.post("http://127.0.0.1:11434/api/chat", json=payload)
+        response.raise_for_status()
+        data = response.json()
+
+    text = str((data.get("message") or {}).get("content", "")).strip()
+    if not text:
+        raise RuntimeError("Ollama returned empty content")
+    return text
+
+
 @app.get("/")
 def health_check():
     return {
@@ -324,6 +349,14 @@ async def chat_completion(req: ChatRequest, authorization: Optional[str] = Heade
                         "Nếu dùng cloud model, hãy cấu hình key tương ứng (ví dụ OPENROUTER_API_KEY). "
                         "Nếu dùng local model, hãy đặt OPENSPACE_MODEL về model local trong cấu hình OpenSpace và khởi động lại backend."
                     )
+                # For local Ollama models, attempt direct Ollama API fallback to keep chat usable.
+                if (resolved_model or "").startswith("ollama/") or (openspace_model or "").startswith("ollama/"):
+                    try:
+                        ollama_text = await _run_ollama_direct(req.messages, openspace_model or resolved_model)
+                        return _openai_response(f"ollama:{(openspace_model or resolved_model).replace('ollama/', '')}", ollama_text, "ollama")
+                    except Exception as ollama_exc:
+                        err_text = f"{err_text} | Ollama fallback failed: {ollama_exc}"
+
                 return _openai_response("openspace:error", err_text, "openspace")
 
     try:
